@@ -7,6 +7,8 @@
 import os
 
 from flask import Blueprint, redirect, render_template, request, url_for, flash
+from flask import g
+from flask_login import login_required
 from models import Entry, Tag
 from helpers import object_list
 from entries.forms import EntryForm, ImageForm
@@ -17,22 +19,37 @@ from app import app, db
 entries = Blueprint('entries', __name__, template_folder='templates')
 
 def entry_list(template, query, **context):
+	query = filter_status_by_user(query)
+
 	valid_statuses = (Entry.STATUS_PUBLIC, Entry.STATUS_DRAFT)
 	query = query.filter(Entry.status.in_(valid_statuses))
-	search = request.args.get('q')
-	if search:
+	if request.args.get("q"):
+		search = request.args["q"]
 		query = query.filter(
 			(Entry.body.contains(search)) |
 			(Entry.title.contains(search)))
 	return object_list(template, query, **context)
 
-def get_entry_or_404(slug):
-	valid_statuses = (Entry.STATUS_PUBLIC, Entry.STATUS_DRAFT)
-	return Entry.query.filter(
-		(Entry.slug == slug) &
-		(Entry.status.in_(valid_statuses))).first_or_404()
+def get_entry_or_404(slug, author=None):
+	query = Entry.query.filter(Entry.slug == slug)
+	if author:
+		query = query.filter(Entry.author == author)
+	else:
+		query = filter_status_by_user(query)
+	return query.first_or_404()
+
+def filter_status_by_user(query):
+	if not g.user.is_authenticated:
+		query = query.filter(Entry.status == Entry.STATUS_PUBLIC)
+	else:
+		query = query.filter(
+			(Entry.status == Entry.STATUS_PUBLIC) |
+			((Entry.author == g.user) &
+			 (Entry.status != Entry.STATUS_DELETED)))
+	return query
 
 @entries.route('/image-upload/', methods=['GET', 'POST'])
+@login_required
 def image_upload():
 	if request.method == 'POST':
 		form = ImageForm(request.form)
@@ -53,11 +70,12 @@ def index():
 	return entry_list('entries/index.html', entries)
 
 @entries.route('/create/', methods=['GET', 'POST'])
+@login_required
 def create():
 	if request.method == 'POST':
 		form = EntryForm(request.form)
 		if form.validate():
-			entry = form.save_entry(Entry())
+			entry = form.save_entry(Entry(author=g.user))
 			db.session.add(entry)
 			db.session.commit()
 			flash('Entry "%s" created successfully.' % entry.title, 'success')
@@ -78,8 +96,9 @@ def tag_detail(slug):
 	return object_list('entries/tag_detail.html', entries, tag=tag)
 
 @entries.route('/<slug>/edit/', methods=['GET', 'POST'])
+@login_required
 def edit(slug):
-	entry = get_entry_or_404(slug)
+	entry = get_entry_or_404(slug, author=None)
 	if request.method == 'POST':
 		form = EntryForm(request.form, obj=entry)
 		if form.validate():
@@ -93,8 +112,9 @@ def edit(slug):
 	return render_template('entries/edit.html', entry=entry, form=form)
 
 @entries.route('/<slug>/delete/', methods=['GET', 'POST'])
+@login_required
 def delete(slug):
-	entry = get_entry_or_404(slug)
+	entry = get_entry_or_404(slug, author=None)
 	if request.method == 'POST':
 		entry.status = Entry.STATUS_DELETED
 		db.session.add(entry)
