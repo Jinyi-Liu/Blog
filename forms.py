@@ -24,6 +24,4 @@ class LoginForm(wtforms.Form):
 		if not self.user:
 			self.email.errors.append("Invalid email or password.")
 			return False
-
 		return True
-

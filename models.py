@@ -29,15 +29,16 @@ class Entry(db.Model):
 	body = db.Column(db.Text)
 	status = db.Column(db.SmallInteger, default=STATUS_PUBLIC)
 	created_timestamp = db.Column(db.DateTime, default=datetime.
-	datetime.now)
+		datetime.now)
 	modified_timestamp = db.Column(
 		db.DateTime,
 		default=datetime.datetime.now,
 		onupdate=datetime.datetime.now)
-	author_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+	author_id = db.Column(db.Integer, db.ForeignKey("user.id"))
 
 	tags = db.relationship('Tag', secondary=entry_tags,
 		backref=db.backref('entries', lazy='dynamic'))
+
 	def __init__(self, *args, **kwargs):
 		super(Entry, self).__init__(*args, **kwargs)
 		self.generate_slug()
@@ -47,6 +48,14 @@ class Entry(db.Model):
 			self.slug = slugify(self.title)
 	def __repr__(self):
 		return '<Entry: %s>' % self.title
+
+	@property
+	def tag_list(self):
+		return ','.join(tag.name for tag in self.tags)
+
+	@property
+	def tease(self):
+		return self.body[:100]
 
 class Tag(db.Model):
 	id = db.Column(db.Integer, primary_key=True)
@@ -67,9 +76,9 @@ class User(db.Model):
 	name = db.Column(db.String(64))
 	slug = db.Column(db.String(64), unique=True)
 	active = db.Column(db.Boolean, default=True)
+	admin = db.Column(db.Boolean, default=False)
 	created_timestamp = db.Column(db.DateTime, default=datetime.datetime.now)
 	entries = db.relationship('Entry', backref='author', lazy='dynamic')
-
 
 	def __init__(self, *args, **kwargs):
 		super(User, self).__init__(*args, **kwargs)
@@ -82,11 +91,13 @@ class User(db.Model):
 	def get_id(self):
 		return str(self.id)
 	def is_authenticated(self):
-		return True
+		return self.active == True
 	def is_active(self):
 		return self.active
 	def is_anonymous(self):
 		return False
+	def is_admin(self):
+		return self.admin == True
 
 	@staticmethod
 	def make_password(plaintext):
